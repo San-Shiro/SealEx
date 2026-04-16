@@ -113,16 +113,7 @@ fun UpdatePage(onNavigateBack: () -> Unit) {
                     }
                 }
 
-                item {
-                    PreferenceSingleChoiceItem(
-                        text = stringResource(id = R.string.pre_release_channel),
-                        selected = updateChannel == PRE_RELEASE,
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
-                    ) {
-                        updateChannel = PRE_RELEASE
-                        UPDATE_CHANNEL.updateInt(updateChannel)
-                    }
-                }
+
                 item {
                     var isLoading by remember { mutableStateOf(false) }
                     Row(

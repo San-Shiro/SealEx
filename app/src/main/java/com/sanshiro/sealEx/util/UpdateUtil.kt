@@ -31,7 +31,7 @@ import okhttp3.ResponseBody
 
 object UpdateUtil {
 
-    private const val OWNER = "SanShiro"
+    private const val OWNER = "San-Shiro"
     private const val REPO = "SealEx"
     private const val ARM64 = "arm64-v8a"
     private const val ARM32 = "armeabi-v7a"
