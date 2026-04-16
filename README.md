@@ -93,30 +93,128 @@ SealEx is an actively maintained, independent fork of the original [Seal](https:
 
 
 
-## 🤖 External Download Service (Intents)
+## 🤖 External Download Service (AIDL)
 
-SealEx introduces an enhanced programmatic interface specifically designed for external automation applications like **Tasker**, **MacroDroid**, or custom scripts. This allows you to effortlessly pass URLs and initiate downloads seamlessly in the background without needing to manually launch the app.
+SealEx exposes a full AIDL-based IPC service that lets any Android app bind directly to SealEx's download engine and control it programmatically. This is ideal for automation apps (**Tasker**, **MacroDroid**), companion apps, and scripts that need real-time progress tracking and fine-grained control over downloads.
 
-To start a download, broadcast an Intent targeting the `ExternalDownloadService`.
+> [!IMPORTANT]
+> You must first enable **"Enable External Download Service"** in SealEx → Settings → General to activate the service.
 
-**Supported Intent Actions:**
-- `com.sanshiro.sealex.action.EXTERNAL_DOWNLOAD` (SealEx standard)
-- `com.junkfood.seal.action.EXTERNAL_DOWNLOAD` (Original backward-compatibility mode)
+---
 
-**How to use it from other apps / ADB:**
-```bash
-# Using ADB
-am startservice -a com.sanshiro.sealex.action.EXTERNAL_DOWNLOAD -d "<VIDEO_URL>"
+### Step 1 — Enable the Service
+
+In SealEx, go to **Settings → General → Enable External Download Service** and toggle it on.
+
+---
+
+### Step 2 — Copy the AIDL files
+
+Copy both AIDL files into your project under the **same package path**:
+
 ```
+app/src/main/aidl/com/sanshiro/sealEx/
+  ├── IExternalDownloadService.aidl
+  └── IDownloadCallback.aidl
+```
+
+---
+
+### Step 3 — Bind to the Service
+
 ```kotlin
-# Using Kotlin/Java
-val intent = Intent("com.sanshiro.sealex.action.EXTERNAL_DOWNLOAD").apply {
-    data = Uri.parse("https://youtube.com/watch?v=YOUR_VIDEO")
+val serviceIntent = Intent("com.sanshiro.sealEx.action.EXTERNAL_DOWNLOAD").apply {
+    setPackage("com.sanshiro.sealex")   // SealEx package name
 }
-context.startService(intent)
+
+val connection = object : ServiceConnection {
+    override fun onServiceConnected(name: ComponentName, binder: IBinder) {
+        val service = IExternalDownloadService.Stub.asInterface(binder)
+        // service is ready to use
+    }
+    override fun onServiceDisconnected(name: ComponentName) { /* handle disconnect */ }
+}
+
+// Backward-compatible action also works:
+// Intent("com.junkfood.seal.action.EXTERNAL_DOWNLOAD").setPackage("com.sanshiro.sealex")
+
+context.bindService(serviceIntent, connection, Context.BIND_AUTO_CREATE)
 ```
 
-**Note:** Ensure you have toggle enabled "Enable External Download Service" in the General Download Preferences for this to work natively.
+---
+
+### IExternalDownloadService — Interface Methods
+
+| Method | Description |
+|--------|-------------|
+| `requestDownload(url, presetName)` | Start a download using a named command template, or pass `null`/`""` for app defaults. Returns a `taskId`. |
+| `requestDownloadWithConfig(url, configJson)` | Start a download with JSON-overridden preferences (e.g. `{"extractAudio": true}`). Returns a `taskId`. |
+| `cancelDownload(taskId)` | Cancel an in-progress download by its `taskId`. |
+| `getPresets()` | Returns a JSON array of all saved command templates plus the default config. |
+| `getDefaultConfig()` | Returns the current default `DownloadPreferences` as a full JSON string. |
+| `registerCallback(callback)` | Register an `IDownloadCallback` to receive live progress events. |
+| `unregisterCallback(callback)` | Unregister a previously registered callback. |
+
+**`requestDownloadWithConfig` — configJson example:**
+```json
+{
+  "extractAudio": true,
+  "audioFormat": "mp3",
+  "aria2c": true,
+  "embedThumbnail": true
+}
+```
+
+---
+
+### IDownloadCallback — Callback Methods
+
+Register a callback with `registerCallback()` to receive real-time events:
+
+| Callback | Parameters | Description |
+|----------|-----------|-------------|
+| `onInfoFetched` | `taskId`, `infoJson` | Fired when metadata is fetched. `infoJson` contains `title`, `uploader`, `duration`, `thumbnailUrl`, `fileSizeApprox`. |
+| `onProgress` | `taskId`, `progress (0.0–1.0)`, `progressText` | Fired repeatedly during download with speed/ETA text. |
+| `onCompleted` | `taskId`, `resultJson` | Fired on success. `resultJson` contains `filePath`, `title`, `uploader`, `duration`. |
+| `onError` | `taskId`, `errorMessage` | Fired on failure with an error description. |
+| `onCanceled` | `taskId` | Fired when the download is canceled by the client. |
+
+**Full usage example:**
+```kotlin
+val callback = object : IDownloadCallback.Stub() {
+    override fun onInfoFetched(taskId: String, infoJson: String) {
+        val info = JSONObject(infoJson)
+        Log.d("SealEx", "Downloading: ${info.getString("title")}")
+    }
+    override fun onProgress(taskId: String, progress: Float, progressText: String) {
+        Log.d("SealEx", "Progress: $progressText")
+    }
+    override fun onCompleted(taskId: String, resultJson: String) {
+        val result = JSONObject(resultJson)
+        Log.d("SealEx", "Saved to: ${result.getString("filePath")}")
+    }
+    override fun onError(taskId: String, errorMessage: String) {
+        Log.e("SealEx", "Error: $errorMessage")
+    }
+    override fun onCanceled(taskId: String) {
+        Log.d("SealEx", "Canceled: $taskId")
+    }
+}
+
+service.registerCallback(callback)
+val taskId = service.requestDownload("https://youtube.com/watch?v=jNQXAC9IVRw", null)
+```
+
+---
+
+### Supported Bind Actions
+
+Both of these Intent actions are registered — your client can use either:
+
+| Action | Description |
+|--------|-------------|
+| `com.sanshiro.sealEx.action.EXTERNAL_DOWNLOAD` | Primary SealEx action |
+| `com.junkfood.seal.action.EXTERNAL_DOWNLOAD` | Backward-compatible (works with tools built for original Seal) |
 
 ## ⬇️ Download
 
